@@ -679,10 +679,24 @@ export default function InteractiveCaptionEditor() {
                       setIsEditingId(null)
                     }
                   }}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation()
-                    setIsEditingId(caption.id)
-                    setEditingText(caption.text)
+                  onClick={(e) => {
+                    if (isEditingId !== caption.id) {
+                      e.stopPropagation()
+                      setIsEditingId(caption.id)
+                      setEditingText(caption.text)
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (isEditingId === caption.id) {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        updatePhraseText(caption.id, editingText || caption.text)
+                        setIsEditingId(null)
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        setIsEditingId(null)
+                      }
+                    }
                   }}
                   style={{
                     fontSize: `${safePosition.fontSize}px`,
@@ -691,13 +705,17 @@ export default function InteractiveCaptionEditor() {
                     color: style.color,
                     backgroundColor: style.backgroundColor || 'transparent',
                     padding: style.backgroundColor ? '4px 8px' : '0px',
-                    borderRadius: style.backgroundColor ? '4px' : '0px',
-                    textShadow: style.backgroundColor ? 'none' : '2px 2px 4px rgba(0,0,0,0.8)',
+                    borderRadius: style.backgroundColor ? `${style.backgroundRadius ?? 4}px` : '0px',
+                    textShadow: style.backgroundColor
+                      ? 'none'
+                      : `${style.shadowOffsetX ?? 2}px ${style.shadowOffsetY ?? 2}px ${style.shadowBlur ?? 4}px ${style.shadowColor ?? 'rgba(0,0,0,0.8)'}`,
                     textAlign: style.textAlign,
+                    letterSpacing: style.letterSpacing ? `${style.letterSpacing}px` : undefined,
                     wordWrap: 'break-word',
                     overflowWrap: 'break-word',
                     whiteSpace: 'pre-wrap',
-                    lineHeight: '1.2',
+                    lineHeight: `${style.lineHeight ?? 1.2}`,
+                    opacity: style.opacity ?? 1,
                     width: '100%'
                   }}
                 >

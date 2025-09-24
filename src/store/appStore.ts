@@ -23,6 +23,18 @@ export interface CaptionStyle {
   customY?: number
   // Text box width control (percentage-based)
   maxWidth?: number
+  // Advanced visual properties
+  letterSpacing?: number // px
+  lineHeight?: number // multiplier (e.g., 1.2)
+  opacity?: number // 0-1
+  shadowColor?: string
+  shadowBlur?: number // px
+  shadowOffsetX?: number // px
+  shadowOffsetY?: number // px
+  outlineColor?: string
+  outlineWidth?: number // px
+  backgroundPadding?: number // px
+  backgroundRadius?: number // px
 }
 
 export interface KeyPhrase {

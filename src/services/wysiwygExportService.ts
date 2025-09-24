@@ -138,6 +138,7 @@ export async function exportVideoWYSIWYG(
                   textAlign: 'center',
                   backgroundColor: undefined
                 }
+                const ext = phrase.style as any
 
                 // Scale font using vertical scale to keep perceived size
                 const baseFontSize = style.fontSize || 24
@@ -145,6 +146,9 @@ export async function exportVideoWYSIWYG(
                 ctx.font = `${style.fontWeight} ${fontSize}px ${style.fontFamily}`
                 ctx.textAlign = style.textAlign as CanvasTextAlign
                 ctx.textBaseline = 'middle'
+                if (ext?.letterSpacing) {
+                  // Canvas does not support letterSpacing natively; approximate by manual drawing per letter if needed later
+                }
 
                 // Position
                 let x: number, y: number
@@ -189,35 +193,42 @@ export async function exportVideoWYSIWYG(
                 if (currentLine !== '') wrappedLines.push(currentLine)
 
                 // Background (optional)
-                const lineHeight = fontSize * 1.2
+                const lineHeight = fontSize * (ext?.lineHeight || 1.2)
                 const totalHeight = wrappedLines.length * lineHeight
                 if (style.backgroundColor) {
                   ctx.fillStyle = style.backgroundColor
                   ctx.fillRect(
-                    x - maxWidthPx / 2 - 12 * scaleX,
-                    y - totalHeight / 2 - 12 * scaleY,
-                    maxWidthPx + 24,
-                    totalHeight + 24 * scaleY
+                    x - maxWidthPx / 2 - (ext?.backgroundPadding ? ext.backgroundPadding * scaleX : 12 * scaleX),
+                    y - totalHeight / 2 - (ext?.backgroundPadding ? ext.backgroundPadding * scaleY : 12 * scaleY),
+                    maxWidthPx + (ext?.backgroundPadding ? ext.backgroundPadding * 2 * scaleX : 24),
+                    totalHeight + (ext?.backgroundPadding ? ext.backgroundPadding * 2 * scaleY : 24)
                   )
                 }
 
                 // Shadow
                 if (!style.backgroundColor) {
-                  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-                  ctx.shadowOffsetX = 2 * scaleX
-                  ctx.shadowOffsetY = 2 * scaleY
-                  ctx.shadowBlur = 4 * Math.max(scaleX, scaleY)
+                  ctx.shadowColor = ext?.shadowColor || 'rgba(0, 0, 0, 0.8)'
+                  ctx.shadowOffsetX = (ext?.shadowOffsetX ?? 2) * scaleX
+                  ctx.shadowOffsetY = (ext?.shadowOffsetY ?? 2) * scaleY
+                  ctx.shadowBlur = (ext?.shadowBlur ?? 4) * Math.max(scaleX, scaleY)
                 } else {
                   ctx.shadowColor = 'transparent'
                 }
 
                 // Text
                 ctx.fillStyle = style.color
+                ctx.globalAlpha = ext?.opacity ?? 1
                 wrappedLines.forEach((line, i) => {
                   const lineY = y - totalHeight / 2 + (i + 0.5) * lineHeight
+                  if (ext?.outlineColor && ext?.outlineWidth) {
+                    ctx.strokeStyle = ext.outlineColor
+                    ctx.lineWidth = (ext.outlineWidth || 0) * Math.max(scaleX, scaleY)
+                    ctx.strokeText(line, x, lineY)
+                  }
                   ctx.fillText(line, x, lineY)
                 })
                 ctx.shadowColor = 'transparent'
+                ctx.globalAlpha = 1
               })
 
               if (currentTime - lastLogTime > 2) {

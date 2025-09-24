@@ -14,6 +14,7 @@ export default function CaptionEditor() {
     captionMode,
     togglePhraseSelection,
     updatePhraseStyle,
+    updatePhraseText,
     applyStyleToAll,
     applyStyleToSelected,
     setCurrentStep,
@@ -21,6 +22,27 @@ export default function CaptionEditor() {
 
   const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'phrases' | 'styles' | 'position' | 'timing'>('phrases')
+
+  // Custom style builder state
+  const [customTextColor, setCustomTextColor] = useState<string>('#ffffff')
+  const [customHasBackground, setCustomHasBackground] = useState<boolean>(false)
+  const [customBackgroundColor, setCustomBackgroundColor] = useState<string>('#000000CC')
+  const [customFontFamily, setCustomFontFamily] = useState<string>('Inter, sans-serif')
+  const [customFontWeight, setCustomFontWeight] = useState<string>('bold')
+  const [customFontSize, setCustomFontSize] = useState<number>(24)
+  const [customTextAlign, setCustomTextAlign] = useState<'left' | 'center' | 'right'>('center')
+  const [customPosition, setCustomPosition] = useState<'top' | 'center' | 'bottom'>('bottom')
+  const [customLetterSpacing, setCustomLetterSpacing] = useState<number>(0)
+  const [customLineHeight, setCustomLineHeight] = useState<number>(1.2)
+  const [customOpacity, setCustomOpacity] = useState<number>(1)
+  const [customShadowColor, setCustomShadowColor] = useState<string>('rgba(0,0,0,0.8)')
+  const [customShadowBlur, setCustomShadowBlur] = useState<number>(4)
+  const [customShadowX, setCustomShadowX] = useState<number>(2)
+  const [customShadowY, setCustomShadowY] = useState<number>(2)
+  const [customOutlineColor, setCustomOutlineColor] = useState<string>('')
+  const [customOutlineWidth, setCustomOutlineWidth] = useState<number>(0)
+  const [customBgPadding, setCustomBgPadding] = useState<number>(12)
+  const [customBgRadius, setCustomBgRadius] = useState<number>(4)
 
   // Get current phrases based on mode
   const currentPhrases = captionMode === 'key-phrases' ? keyPhrases : fullTranscriptCaptions
@@ -38,6 +60,63 @@ export default function CaptionEditor() {
     if (style) {
       updatePhraseStyle(selectedPhraseId, style)
     }
+  }
+
+  const handleApplyCustom = (target: 'selected' | 'all') => {
+    const newStyle = {
+      id: 'custom',
+      name: 'Custom Style',
+      fontFamily: customFontFamily,
+      fontSize: customFontSize,
+      fontWeight: customFontWeight,
+      color: customTextColor,
+      backgroundColor: customHasBackground ? customBackgroundColor : undefined,
+      textAlign: customTextAlign,
+      position: customPosition,
+      letterSpacing: customLetterSpacing,
+      lineHeight: customLineHeight,
+      opacity: customOpacity,
+      shadowColor: customShadowColor,
+      shadowBlur: customShadowBlur,
+      shadowOffsetX: customShadowX,
+      shadowOffsetY: customShadowY,
+      outlineColor: customOutlineColor || undefined,
+      outlineWidth: customOutlineWidth || undefined,
+      backgroundPadding: customBgPadding,
+      backgroundRadius: customBgRadius
+    } as const
+    if (target === 'all') {
+      applyStyleToAll(newStyle)
+    } else {
+      applyStyleToSelected(newStyle)
+    }
+  }
+
+  const handleApplyCustomToOne = () => {
+    if (!selectedPhraseId) return
+    const newStyle = {
+      id: 'custom',
+      name: 'Custom Style',
+      fontFamily: customFontFamily,
+      fontSize: customFontSize,
+      fontWeight: customFontWeight,
+      color: customTextColor,
+      backgroundColor: customHasBackground ? customBackgroundColor : undefined,
+      textAlign: customTextAlign,
+      position: customPosition,
+      letterSpacing: customLetterSpacing,
+      lineHeight: customLineHeight,
+      opacity: customOpacity,
+      shadowColor: customShadowColor,
+      shadowBlur: customShadowBlur,
+      shadowOffsetX: customShadowX,
+      shadowOffsetY: customShadowY,
+      outlineColor: customOutlineColor || undefined,
+      outlineWidth: customOutlineWidth || undefined,
+      backgroundPadding: customBgPadding,
+      backgroundRadius: customBgRadius
+    } as const
+    updatePhraseStyle(selectedPhraseId, newStyle as any)
   }
 
   const handleBulkStyleChange = (styleId: string, target: 'all' | 'selected') => {
@@ -152,7 +231,23 @@ export default function CaptionEditor() {
                         <EyeOff className="w-4 h-4 text-gray-400" />
                       )}
                     </button>
-                    <span className="font-medium">&quot;{phrase.text}&quot;</span>
+                    <input
+                      type="text"
+                      defaultValue={phrase.text}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => {
+                        const val = e.currentTarget.value.trim()
+                        if (val && val !== phrase.text) {
+                          updatePhraseText(phrase.id, val)
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          (e.target as HTMLInputElement).blur()
+                        }
+                      }}
+                      className="font-medium bg-transparent border-b border-dashed border-gray-300 focus:border-blue-400 outline-none text-sm md:text-base px-1"
+                    />
                   </div>
                   <span className="text-xs text-gray-500">
                     {formatTime(phrase.start)} - {formatTime(phrase.end)}
@@ -282,6 +377,145 @@ export default function CaptionEditor() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Custom Style Builder */}
+          <div className="border-t pt-4">
+            <h4 className="font-semibold mb-3">Custom Style Builder</h4>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {/* Text Color */}
+              <div className="flex items-center justify-between p-3 rounded border">
+                <label className="text-sm">Text color</label>
+                <input type="color" value={customTextColor} onChange={(e) => setCustomTextColor(e.target.value)} className="h-8 w-12 cursor-pointer bg-transparent border rounded" />
+              </div>
+              {/* Background toggle + color */}
+              <div className="flex items-center justify-between p-3 rounded border">
+                <label className="text-sm">Background</label>
+                <div className="flex items-center gap-3">
+                  <input type="checkbox" checked={customHasBackground} onChange={(e) => setCustomHasBackground(e.target.checked)} />
+                  <input type="color" value={customBackgroundColor} disabled={!customHasBackground} onChange={(e) => setCustomBackgroundColor(e.target.value)} className="h-8 w-12 cursor-pointer bg-transparent border rounded disabled:opacity-50" />
+                </div>
+              </div>
+              {/* Font family */}
+              <div className="flex items-center justify-between p-3 rounded border">
+                <label className="text-sm">Font</label>
+                <select value={customFontFamily} onChange={(e) => setCustomFontFamily(e.target.value)} className="text-sm border rounded px-2 py-1 bg-transparent">
+                  <option value="Inter, sans-serif">Inter</option>
+                  <option value="Helvetica, sans-serif">Helvetica</option>
+                  <option value="Georgia, serif">Georgia</option>
+                  <option value="Impact, sans-serif">Impact</option>
+                  <option value="Comic Sans MS, cursive">Comic Sans</option>
+                </select>
+              </div>
+              {/* Weight */}
+              <div className="flex items-center justify-between p-3 rounded border">
+                <label className="text-sm">Weight</label>
+                <select value={customFontWeight} onChange={(e) => setCustomFontWeight(e.target.value)} className="text-sm border rounded px-2 py-1 bg-transparent">
+                  <option value="normal">Normal</option>
+                  <option value="medium">Medium</option>
+                  <option value="semibold">Semibold</option>
+                  <option value="bold">Bold</option>
+                  <option value="900">Black</option>
+                </select>
+              </div>
+              {/* Font size */}
+              <div className="flex items-center justify-between p-3 rounded border">
+                <label className="text-sm">Font size</label>
+                <div className="flex items-center gap-2">
+                  <input type="range" min={12} max={72} value={customFontSize} onChange={(e) => setCustomFontSize(parseInt(e.target.value))} />
+                  <span className="text-sm text-gray-500 w-10 text-right">{customFontSize}px</span>
+                </div>
+              </div>
+              {/* Align */}
+              <div className="flex items-center justify-between p-3 rounded border">
+                <label className="text-sm">Align</label>
+                <select value={customTextAlign} onChange={(e) => setCustomTextAlign(e.target.value as any)} className="text-sm border rounded px-2 py-1 bg-transparent">
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </div>
+              {/* Position */}
+              <div className="flex items-center justify-between p-3 rounded border">
+                <label className="text-sm">Position</label>
+                <select value={customPosition} onChange={(e) => setCustomPosition(e.target.value as any)} className="text-sm border rounded px-2 py-1 bg-transparent">
+                  <option value="top">Top</option>
+                  <option value="center">Center</option>
+                  <option value="bottom">Bottom</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Preview & Apply */}
+            <div className="mt-4 grid sm:grid-cols-2 gap-3">
+              <div className="p-4 border rounded">
+                <div
+                  className="rounded text-center"
+                  style={{
+                    fontFamily: customFontFamily,
+                    fontSize: `${customFontSize}px`,
+                    fontWeight: customFontWeight as any,
+                    color: customTextColor,
+                    backgroundColor: customHasBackground ? customBackgroundColor : 'transparent',
+                    letterSpacing: `${customLetterSpacing}px`,
+                    lineHeight: customLineHeight,
+                    opacity: customOpacity,
+                    textShadow: `${customShadowX}px ${customShadowY}px ${customShadowBlur}px ${customShadowColor}`,
+                    borderRadius: `${customBgRadius}px`,
+                    padding: customHasBackground ? `${customBgPadding}px` : undefined
+                  }}
+                >
+                  Your custom caption style
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button onClick={() => handleApplyCustom('selected')} disabled={selectedPhrases.length === 0} className="flex-1 px-3 py-2 text-sm rounded bg-black text-white disabled:opacity-50">
+                  Apply to Selected ({selectedPhrases.length})
+                </button>
+                <button onClick={() => handleApplyCustom('all')} className="flex-1 px-3 py-2 text-sm rounded border">
+                  Apply to All ({currentPhrases.length})
+                </button>
+                <button onClick={handleApplyCustomToOne} disabled={!selectedPhraseId} className="flex-1 px-3 py-2 text-sm rounded border">
+                  Apply to This Phrase {selectedPhrase ? `("${selectedPhrase.text.substring(0, 16)}${selectedPhrase.text.length > 16 ? '…' : ''}")` : ''}
+                </button>
+                {/* Advanced controls rows */}
+                <div className="grid grid-cols-2 gap-3 mt-2 text-sm">
+                  <label className="flex items-center justify-between gap-3">Letter spacing (px)
+                    <input type="number" value={customLetterSpacing} onChange={(e) => setCustomLetterSpacing(parseInt(e.target.value || '0'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Line height
+                    <input type="number" step="0.1" min="0.8" max="2" value={customLineHeight} onChange={(e) => setCustomLineHeight(parseFloat(e.target.value || '1.2'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Opacity
+                    <input type="range" min={0.1} max={1} step={0.05} value={customOpacity} onChange={(e) => setCustomOpacity(parseFloat(e.target.value))} />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Shadow color
+                    <input type="color" value={customShadowColor} onChange={(e) => setCustomShadowColor(e.target.value)} className="h-8 w-12 border rounded" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Shadow blur
+                    <input type="number" value={customShadowBlur} onChange={(e) => setCustomShadowBlur(parseInt(e.target.value || '0'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Shadow X
+                    <input type="number" value={customShadowX} onChange={(e) => setCustomShadowX(parseInt(e.target.value || '0'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Shadow Y
+                    <input type="number" value={customShadowY} onChange={(e) => setCustomShadowY(parseInt(e.target.value || '0'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Outline color
+                    <input type="color" value={customOutlineColor} onChange={(e) => setCustomOutlineColor(e.target.value)} className="h-8 w-12 border rounded" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Outline width
+                    <input type="number" min={0} value={customOutlineWidth} onChange={(e) => setCustomOutlineWidth(parseInt(e.target.value || '0'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Background padding
+                    <input type="number" min={0} value={customBgPadding} onChange={(e) => setCustomBgPadding(parseInt(e.target.value || '0'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3">Background radius
+                    <input type="number" min={0} value={customBgRadius} onChange={(e) => setCustomBgRadius(parseInt(e.target.value || '0'))} className="w-20 border rounded px-2 py-1 bg-transparent" />
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
