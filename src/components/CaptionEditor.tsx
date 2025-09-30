@@ -21,7 +21,7 @@ export default function CaptionEditor() {
   } = useAppStore()
 
   const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'phrases' | 'styles' | 'position' | 'timing'>('phrases')
+  const [activeTab, setActiveTab] = useState<'phrases' | 'styles'>('phrases')
 
   // Custom style builder state
   const [customTextColor, setCustomTextColor] = useState<string>('#ffffff')
@@ -138,77 +138,55 @@ export default function CaptionEditor() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Caption Mode Selector */}
       <CaptionModeSelector />
       
       {/* Quick Style Actions */}
       <QuickStyleActions />
       
-      {/* Tab Navigation */}
-      <div className="flex border-b border-gray-200 dark:border-gray-700">
+      {/* Tab Navigation - Compact for sidebar */}
+      <div className="grid grid-cols-2 gap-1 border-b border-gray-200 dark:border-gray-700 pb-2">
         <button
           onClick={() => setActiveTab('phrases')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+          className={`px-2 py-1.5 font-medium text-xs border-b-2 transition-colors ${
             activeTab === 'phrases'
               ? 'border-blue-500 text-blue-600 dark:text-blue-400'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
           }`}
         >
-          <Type className="w-4 h-4 inline mr-2" />
+          <Type className="w-3 h-3 inline mr-1" />
           Phrases ({selectedPhrases.length})
         </button>
         <button
           onClick={() => setActiveTab('styles')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+          className={`px-2 py-1.5 font-medium text-xs border-b-2 transition-colors ${
             activeTab === 'styles'
               ? 'border-blue-500 text-blue-600 dark:text-blue-400'
               : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
           }`}
         >
-          <Palette className="w-4 h-4 inline mr-2" />
+          <Palette className="w-3 h-3 inline mr-1" />
           Styles
-        </button>
-        <button
-          onClick={() => setActiveTab('position')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'position'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-          }`}
-        >
-          <Move className="w-4 h-4 inline mr-2" />
-          Position & Size
-        </button>
-        <button
-          onClick={() => setActiveTab('timing')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'timing'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-          }`}
-        >
-          <Clock className="w-4 h-4 inline mr-2" />
-          Timing
         </button>
       </div>
 
       {/* Phrases Tab */}
       {activeTab === 'phrases' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="font-semibold">Select Phrases for Captions</h4>
-            <span className="text-sm text-gray-500">
+            <h4 className="font-semibold text-sm">Select Phrases</h4>
+            <span className="text-xs text-gray-500">
               {selectedPhrases.length} selected
             </span>
           </div>
           
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="space-y-1 max-h-64 overflow-y-auto">
             {currentPhrases.map((phrase) => (
               <div
                 key={phrase.id}
                 onClick={() => handlePhraseClick(phrase.id)}
-                className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                className={`p-2 rounded border cursor-pointer transition-all ${
                   selectedPhraseId === phrase.id
                     ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
                     : phrase.isSelected
@@ -380,7 +358,29 @@ export default function CaptionEditor() {
           </div>
 
           {/* Custom Style Builder */}
-          <div className="border-t pt-4">
+          <div className="">
+            {/* Moved preview to top */}
+            <div className="p-4 border rounded mb-3">
+              <div
+                className="rounded text-center"
+                style={{
+                  fontFamily: customFontFamily,
+                  fontSize: `${customFontSize}px`,
+                  fontWeight: customFontWeight as any,
+                  color: customTextColor,
+                  backgroundColor: customHasBackground ? customBackgroundColor : 'transparent',
+                  letterSpacing: `${customLetterSpacing}px`,
+                  lineHeight: customLineHeight,
+                  opacity: customOpacity,
+                  textShadow: `${customShadowX}px ${customShadowY}px ${customShadowBlur}px ${customShadowColor}`,
+                  borderRadius: `${customBgRadius}px`,
+                  padding: customHasBackground ? `${customBgPadding}px` : undefined
+                }}
+              >
+                Your custom caption style
+              </div>
+            </div>
+
             <h4 className="font-semibold mb-3">Custom Style Builder</h4>
             <div className="grid sm:grid-cols-2 gap-4">
               {/* Text Color */}
@@ -446,28 +446,8 @@ export default function CaptionEditor() {
               </div>
             </div>
 
-            {/* Preview & Apply */}
-            <div className="mt-4 grid sm:grid-cols-2 gap-3">
-              <div className="p-4 border rounded">
-                <div
-                  className="rounded text-center"
-                  style={{
-                    fontFamily: customFontFamily,
-                    fontSize: `${customFontSize}px`,
-                    fontWeight: customFontWeight as any,
-                    color: customTextColor,
-                    backgroundColor: customHasBackground ? customBackgroundColor : 'transparent',
-                    letterSpacing: `${customLetterSpacing}px`,
-                    lineHeight: customLineHeight,
-                    opacity: customOpacity,
-                    textShadow: `${customShadowX}px ${customShadowY}px ${customShadowBlur}px ${customShadowColor}`,
-                    borderRadius: `${customBgRadius}px`,
-                    padding: customHasBackground ? `${customBgPadding}px` : undefined
-                  }}
-                >
-                  Your custom caption style
-                </div>
-              </div>
+            {/* Apply */}
+            <div className="mt-4 grid sm:grid-cols-1 gap-3">
               <div className="flex flex-col gap-2">
                 <button onClick={() => handleApplyCustom('selected')} disabled={selectedPhrases.length === 0} className="flex-1 px-3 py-2 text-sm rounded bg-black text-white disabled:opacity-50">
                   Apply to Selected ({selectedPhrases.length})
@@ -520,34 +500,9 @@ export default function CaptionEditor() {
         </div>
       )}
 
-      {/* Position & Size Tab */}
-      {activeTab === 'position' && (
-        <InteractiveCaptionEditor />
-      )}
+      
 
-      {/* Timing Tab */}
-      {activeTab === 'timing' && (
-        <div className="space-y-4">
-          <h4 className="font-semibold">Caption Timing</h4>
-          
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-            <h5 className="font-medium mb-3">Timeline Preview</h5>
-            <div className="space-y-2">
-              {selectedPhrases.map((phrase) => (
-                <div
-                  key={phrase.id}
-                  className="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded"
-                >
-                  <span className="text-sm">&quot;{phrase.text}&quot;</span>
-                  <span className="text-xs text-gray-500">
-                    {formatTime(phrase.start)} - {formatTime(phrase.end)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      
 
       {/* Action Buttons */}
       <div className="flex gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">

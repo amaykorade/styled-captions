@@ -216,3 +216,79 @@ export function getFormatName(file: File): string {
   
   return formatNames[extension || ''] || extension?.toUpperCase() || 'Unknown'
 }
+
+// Transcode a source Blob (e.g., recorded WebM) to the desired container/codec
+export async function transcodeBlobToFormat(
+  inputBlob: Blob,
+  target: 'mp4' | 'mov',
+  onProgress?: (progress: number) => void
+): Promise<{ blob: Blob; mime: string; fileName: string }> {
+  let ffmpegInstance: FFmpeg | null = null
+
+  try {
+    onProgress?.(5)
+    try {
+      ffmpegInstance = await initFFmpeg()
+    } catch (e) {
+      throw new Error('FFmpeg not available in this browser to transcode. Try a different browser or use the WebM file.')
+    }
+
+    onProgress?.(15)
+    const inputData = new Uint8Array(await inputBlob.arrayBuffer())
+    const inputName = 'input.webm'
+    const outputName = target === 'mp4' ? 'output.mp4' : 'output.mov'
+    const mime = target === 'mp4' ? 'video/mp4' : 'video/quicktime'
+
+    await ffmpegInstance.writeFile(inputName, inputData)
+    onProgress?.(30)
+
+    // Conservative, broadly compatible encodes
+    const argsBase = [
+      '-i', inputName,
+      '-r', '30',
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-preset', 'medium',
+      '-crf', '23',
+      '-c:a', 'aac',
+      '-shortest'
+    ]
+    const args = target === 'mp4'
+      ? [...argsBase, '-movflags', '+faststart', '-y', outputName]
+      : [...argsBase, '-f', 'mov', '-y', outputName]
+
+    ffmpegInstance.on('progress', ({ progress }) => {
+      // map 30..95
+      const p = 30 + Math.min(65, Math.max(0, progress * 65))
+      onProgress?.(p)
+    })
+
+    try {
+      await ffmpegInstance.exec(args)
+    } catch (e) {
+      // Retry without audio track (some inputs lack audio and AAC encode can fail)
+      const retryArgs = target === 'mp4'
+        ? ['-i', inputName, '-r', '30', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '23', '-an', '-movflags', '+faststart', '-y', outputName]
+        : ['-i', inputName, '-r', '30', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '23', '-an', '-f', 'mov', '-y', outputName]
+      await ffmpegInstance.exec(retryArgs)
+    }
+    onProgress?.(96)
+
+    const outputData = await ffmpegInstance.readFile(outputName)
+    if (!outputData || (outputData as Uint8Array).length === 0) {
+      throw new Error('Transcode produced empty file')
+    }
+    const outBlob = new Blob([outputData as BlobPart], { type: mime })
+
+    // Cleanup
+    try {
+      await ffmpegInstance.deleteFile(inputName)
+      await ffmpegInstance.deleteFile(outputName)
+    } catch {}
+
+    onProgress?.(100)
+    return { blob: outBlob, mime, fileName: outputName }
+  } catch (err) {
+    throw err instanceof Error ? err : new Error('Transcoding failed')
+  }
+}

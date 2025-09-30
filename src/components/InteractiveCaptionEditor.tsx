@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { Move, RotateCcw, ZoomIn, ZoomOut, Maximize2, Minimize2, Link, Unlink, ArrowLeftRight, Play, Pause, Plus } from 'lucide-react'
 
@@ -19,6 +19,9 @@ export default function InteractiveCaptionEditor() {
     syncFontSizeToAll,
     currentTime,
     setExportReadyCaptions,
+    setSelectedPhraseId,
+    selectedPhraseId,
+    togglePhraseSelection,
   } = useAppStore()
 
   const [isDragging, setIsDragging] = useState(false)
@@ -33,7 +36,150 @@ export default function InteractiveCaptionEditor() {
   const [isEditingId, setIsEditingId] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
   const [duration, setDuration] = useState<number>(0)
+  const selectionRangesRef = useRef<Record<string, { start: number; end: number }>>({})
+  const textareaRefsRef = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const [pickerColorById, setPickerColorById] = useState<Record<string, string>>({})
   const videoUrl = useMemo(() => (videoFile ? URL.createObjectURL(videoFile) : ''), [videoFile])
+
+  // Helpers for rich-text tags
+  const stripColorTags = (text: string): string =>
+    text
+      // Remove any opening [color=...] tag (case-insensitive, tolerant of spaces/malformed hex)
+      .replace(/\[\s*color[^\]]*\]/gi, '')
+      // Remove any closing [/color] tag (case-insensitive)
+      .replace(/\[\s*\/\s*color\s*\]/gi, '')
+
+  // Map a plain-text index (tags stripped) to the equivalent index in the rich-text string
+  const mapPlainToRichIndex = (rich: string, targetPlainIndex: number): number => {
+    let plainIndex = 0
+    for (let i = 0; i < rich.length; i++) {
+      // Detect [color=#xxxxxx] ... ] tag start
+      if (rich[i] === '[') {
+        const open = rich.slice(i).match(/^\[color=\s*(#[0-9a-fA-F]{6})\s*\]/)
+        const close = !open && rich.slice(i).match(/^\[\/color\]/)
+        if (open) {
+          i += open[0].length - 1
+          continue
+        }
+        if (close) {
+          i += close[0].length - 1
+          continue
+        }
+      }
+      if (plainIndex === targetPlainIndex) {
+        return i
+      }
+      plainIndex++
+    }
+    return rich.length
+  }
+
+  const wrapSelectionWithColor = (rich: string, startPlain: number, endPlain: number, color: string): string => {
+    const startRich = mapPlainToRichIndex(rich, startPlain)
+    const endRich = mapPlainToRichIndex(rich, endPlain)
+    const selectedRich = rich.slice(startRich, endRich)
+    const cleanSelected = stripColorTags(selectedRich)
+    return rich.slice(0, startRich) + `[color=${color}]` + cleanSelected + `[/color]` + rich.slice(endRich)
+  }
+
+  type Segment = { text: string; color?: string }
+  const parseRichToSegments = (rich: string): Segment[] => {
+    const segments: Segment[] = []
+    let i = 0
+    let currentColor: string | undefined = undefined
+    while (i < rich.length) {
+      if (rich[i] === '[') {
+        const open = rich.slice(i).match(/^\[color=\s*(#[0-9a-fA-F]{6})\s*\]/)
+        const close = !open && rich.slice(i).match(/^\[\/color\]/)
+        if (open) { currentColor = open[1]; i += open[0].length; continue }
+        if (close) { currentColor = undefined; i += close[0].length; continue }
+      }
+      // accumulate plain run until next tag
+      let j = i
+      while (j < rich.length && rich[j] !== '[') j++
+      const chunk = rich.slice(i, j)
+      if (chunk) segments.push({ text: chunk, color: currentColor })
+      i = j
+    }
+    return segments
+  }
+
+  const rebuildRichFromSegments = (segments: Segment[]): string => {
+    return segments.map(seg => seg.color ? `[color=${seg.color}]${seg.text}[/color]` : seg.text).join('')
+  }
+
+  const applyColorToPlainRange = (rich: string, startPlain: number, endPlain: number, color: string): string => {
+    const segments = parseRichToSegments(rich)
+    const result: Segment[] = []
+    let plainPos = 0
+    for (const seg of segments) {
+      const segStart = plainPos
+      const segEnd = plainPos + seg.text.length
+      if (endPlain <= segStart || startPlain >= segEnd) {
+        // no overlap
+        result.push(seg)
+      } else {
+        // overlap; split into up to three
+        const leftLen = Math.max(0, startPlain - segStart)
+        const midLen = Math.min(segEnd, endPlain) - Math.max(segStart, startPlain)
+        const rightLen = Math.max(0, segEnd - endPlain)
+        if (leftLen > 0) result.push({ text: seg.text.slice(0, leftLen), color: seg.color })
+        if (midLen > 0) result.push({ text: seg.text.slice(leftLen, leftLen + midLen), color })
+        if (rightLen > 0) result.push({ text: seg.text.slice(leftLen + midLen), color: seg.color })
+      }
+      plainPos = segEnd
+    }
+    return rebuildRichFromSegments(result)
+  }
+
+  // Render caption text honoring valid [color=#xxxxxx]...[/color] pairs only; any stray tags are stripped
+  const renderRichTextWithColors = (text: string, fallbackColor: string): ReactNode => {
+    const out: ReactNode[] = []
+    let i = 0
+    let key = 0
+    const pushPlain = (s: string) => {
+      const cleaned = stripColorTags(s)
+      if (cleaned) out.push(<span key={`p${key++}`} style={{ color: fallbackColor }}>{cleaned}</span>)
+    }
+    while (i < text.length) {
+      // Newline
+      if (text[i] === '\n') { out.push(<br key={`br${key++}`} />); i++; continue }
+      // Try open tag
+      if (text[i] === '[') {
+        const openMatch = text.slice(i).match(/^\[color=\s*(#[0-9a-fA-F]{6})\s*\]/)
+        const closeMatch = !openMatch && text.slice(i).match(/^\[\/color\]/)
+        if (openMatch) {
+          const color = openMatch[1]
+          const openLen = openMatch[0].length
+          const contentStart = i + openLen
+          // Find closing tag
+          const closeIdx = text.slice(contentStart).indexOf('[/color]')
+          if (closeIdx >= 0) {
+            // Push nothing before because open starts exactly at i; consume up to open start already handled
+            const coloredContent = stripColorTags(text.slice(contentStart, contentStart + closeIdx))
+            if (coloredContent) out.push(<span key={`c${key++}`} style={{ color }}>{coloredContent}</span>)
+            i = contentStart + closeIdx + '[/color]'.length
+            continue
+          } else {
+            // No valid closing tag; strip the open tag and continue rendering plain
+            i = contentStart
+            continue
+          }
+        }
+        if (closeMatch) {
+          // Stray close tag; strip it
+          i += closeMatch[0].length
+          continue
+        }
+      }
+      // Accumulate plain until next '[' or '\n'
+      let j = i
+      while (j < text.length && text[j] !== '[' && text[j] !== '\n') j++
+      pushPlain(text.slice(i, j))
+      i = j
+    }
+    return <>{out}</>
+  }
 
   // Cleanup created object URL when file changes/unmounts
   useEffect(() => {
@@ -49,8 +195,8 @@ export default function InteractiveCaptionEditor() {
   const currentCaptions = getCurrentCaptions()
   const selectedCaptions = currentCaptions.filter(c => c.isSelected)
   
-  // Get captions active at current preview time
-  const activeCaptions = selectedCaptions.filter(c => 
+  // Captions whose timing window includes the current preview time (regardless of show/hide)
+  const timeCaptions = currentCaptions.filter(c => 
     previewTime >= c.start && previewTime <= c.end
   )
 
@@ -329,13 +475,35 @@ export default function InteractiveCaptionEditor() {
     const caption = currentCaptions.find(c => c.id === captionId)
     if (caption && caption.style) {
       const newStyle = {
-        ...caption.style,
+        // Reset to clean default style, removing per-word colors and any overrides
+        id: 'default',
+        name: 'Default',
+        fontFamily: 'Arial',
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#ffffff',
+        textAlign: 'center' as const,
+        position: 'bottom' as const,
         customX: undefined,
         customY: undefined,
-        fontSize: 24,
-        maxWidth: undefined
+        maxWidth: undefined,
+        letterSpacing: undefined,
+        lineHeight: undefined,
+        opacity: undefined,
+        shadowColor: undefined,
+        shadowBlur: undefined,
+        shadowOffsetX: undefined,
+        shadowOffsetY: undefined,
+        outlineColor: undefined,
+        outlineWidth: undefined,
+        backgroundColor: undefined,
+        backgroundPadding: undefined,
+        backgroundRadius: undefined
       }
       updatePhraseStyle(captionId, newStyle)
+      // Also strip any inline color tags from the caption text
+      const plain = stripColorTags(caption.text)
+      updatePhraseText(captionId, plain)
     }
   }
 
@@ -386,9 +554,9 @@ export default function InteractiveCaptionEditor() {
     }
   }
 
-  // Initialize positions for active captions
+  // Initialize positions for captions visible at current time (even if hidden on canvas)
   useEffect(() => {
-    activeCaptions.forEach(caption => {
+    timeCaptions.forEach(caption => {
       if (!captionPositions[caption.id]) {
         setCaptionPositions(prev => ({
           ...prev,
@@ -401,7 +569,7 @@ export default function InteractiveCaptionEditor() {
         }))
       }
     })
-  }, [activeCaptions, captionPositions])
+  }, [timeCaptions, captionPositions])
 
   // Update export-ready captions whenever positions change
   useEffect(() => {
@@ -450,21 +618,19 @@ export default function InteractiveCaptionEditor() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h4 className="font-semibold flex items-center gap-2">
-          <Move className="w-5 h-5 text-green-500" />
-          Interactive Caption Editor
-        </h4>
-        <div className="flex items-center gap-4">
-          {/* Control Toggles */}
-          <div className="flex gap-2">
+      <div className="">
+        <div className="flex items-center justify-between gap-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 shadow-sm">
+
+          {/* Group: Sync Toggles */}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setSyncFontSizes(!syncFontSizes)}
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
                 syncFontSizes
-                  ? 'bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
               }`}
+              title={syncFontSizes ? 'Sizes synced across captions' : 'Edit sizes individually'}
             >
               {syncFontSizes ? <Link className="w-3 h-3" /> : <Unlink className="w-3 h-3" />}
               Size
@@ -473,20 +639,80 @@ export default function InteractiveCaptionEditor() {
               onClick={() => setSyncWidths(!syncWidths)}
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
                 syncWidths
-                  ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
               }`}
+              title={syncWidths ? 'Widths synced across captions' : 'Edit widths individually'}
             >
               <ArrowLeftRight className="w-3 h-3" />
               Width
             </button>
           </div>
-          
-          {/* Playback Controls */}
-          <div className="flex items-center gap-2">
+
+          {/* Divider */}
+          <div className="hidden md:block w-px h-6 bg-gray-200 dark:bg-gray-700" />
+
+          {/* Group: Quick controls for selected caption */}
+          <div className="hidden md:flex items-center gap-3">
+            {selectedPhraseId && (
+              <>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => adjustFontSize(selectedPhraseId, -2)}
+                    className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-xs"
+                    title="Decrease font size"
+                  >
+                    A-
+                  </button>
+                  <span className="text-xs text-gray-600 dark:text-gray-300 min-w-[36px] text-center">
+                    {(() => {
+                      const pos = captionPositions[selectedPhraseId] || { fontSize: 24 }
+                      return `${pos.fontSize ?? 24}px`
+                    })()}
+                  </span>
+                  <button
+                    onClick={() => adjustFontSize(selectedPhraseId, 2)}
+                    className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-xs"
+                    title="Increase font size"
+                  >
+                    A+
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => adjustWidth(selectedPhraseId, -5)}
+                    className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-xs"
+                    title="Decrease text box width"
+                  >
+                    ←
+                  </button>
+                  <span className="text-xs text-gray-600 dark:text-gray-300 min-w-[40px] text-center">
+                    {(() => {
+                      const pos = captionPositions[selectedPhraseId] || { maxWidth: 80 }
+                      return `${(pos.maxWidth ?? 80).toFixed(0)}%`
+                    })()}
+                  </span>
+                  <button
+                    onClick={() => adjustWidth(selectedPhraseId, 5)}
+                    className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-xs"
+                    title="Increase text box width"
+                  >
+                    →
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="hidden md:block w-px h-6 bg-gray-200 dark:bg-gray-700" />
+
+          {/* Group: Playback & Time */}
+          <div className="flex items-center gap-2 flex-1">
             <button
               onClick={togglePlay}
-              className="px-2 py-1 rounded border bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="px-2 py-1 rounded border bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
               title={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -498,14 +724,18 @@ export default function InteractiveCaptionEditor() {
               step="0.05"
               value={previewTime}
               onChange={(e) => scrubTo(parseFloat(e.target.value))}
-              className="w-40"
+              className="w-full max-w-sm"
             />
-            <span className="text-sm text-gray-500 w-16">
+            <span className="text-xs md:text-sm text-gray-600 dark:text-gray-300 w-16 text-right">
               {previewTime.toFixed(1)}s
             </span>
+          </div>
+
+          {/* Group: Actions */}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => addCustomCaption('New text', previewTime, previewTime + 2)}
-              className="ml-2 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-xs flex items-center gap-1"
+              className="px-2 py-1 rounded bg-black text-white dark:bg-white dark:text-black hover:bg-gray-900 dark:hover:bg-gray-200 text-xs flex items-center gap-1"
               title="Add text layer at playhead"
             >
               <Plus className="w-3 h-3" /> Add Text
@@ -552,8 +782,8 @@ export default function InteractiveCaptionEditor() {
           />
         )}
 
-        {/* Interactive Captions */}
-        {activeCaptions.map((caption) => {
+        {/* Interactive Captions (only those marked to show) */}
+        {timeCaptions.filter(c => c.isSelected).map((caption) => {
           const position = captionPositions[caption.id] || { x: 50, y: 85, fontSize: 24, maxWidth: 80 }
           // Ensure maxWidth is always defined
           const safePosition = {
@@ -592,43 +822,43 @@ export default function InteractiveCaptionEditor() {
           
           if (tempCtx) {
             tempCtx.font = `${style.fontWeight} ${safePosition.fontSize}px ${style.fontFamily}`
-            
-            // Canva-style text wrapping algorithm
-            const words = caption.text.split(' ')
-            let currentLine = ''
-            
-            for (let i = 0; i < words.length; i++) {
-              const word = words[i]
-              const testLine = currentLine === '' ? word : `${currentLine} ${word}`
-              const testWidth = tempCtx.measureText(testLine).width
-              
-              if (testWidth <= maxWidthPx) {
-                // Word fits, add to current line
-                currentLine = testLine
-              } else {
-                // Word doesn't fit
-                if (currentLine !== '') {
-                  // Save current line and start new one with this word
-                  wrappedLines.push(currentLine)
-                  currentLine = word
+            // Remove [color=...] and [/color] tags from measurement text before wrapping
+            const plainText = caption.text.replace(/\[\/?color[^\]]*\]/g, '')
+            // Respect explicit newlines: split text into paragraphs and wrap each
+            const paragraphs = plainText.split('\n')
+            for (let p = 0; p < paragraphs.length; p++) {
+              const words = paragraphs[p].split(' ')
+              let currentLine = ''
+              for (let i = 0; i < words.length; i++) {
+                const word = words[i]
+                const testLine = currentLine === '' ? word : `${currentLine} ${word}`
+                const testWidth = tempCtx.measureText(testLine).width
+                if (testWidth <= maxWidthPx) {
+                  currentLine = testLine
                 } else {
-                  // Single word is too long, force it on its own line
-                  wrappedLines.push(word)
-                  currentLine = ''
+                  if (currentLine !== '') {
+                    wrappedLines.push(currentLine)
+                    currentLine = word
+                  } else {
+                    wrappedLines.push(word)
+                    currentLine = ''
+                  }
                 }
               }
-            }
-            
-            // Add the last line if it has content
-            if (currentLine !== '') {
-              wrappedLines.push(currentLine)
+              if (currentLine !== '') {
+                wrappedLines.push(currentLine)
+              }
+              // If not the last paragraph, add an empty line to represent the newline
+              if (p < paragraphs.length - 1) {
+                wrappedLines.push('')
+              }
             }
           } else {
             // Fallback to simple wrapping
             wrappedLines = [caption.text]
           }
 
-          const isSelected = draggedCaptionId === caption.id || resizingCaptionId === caption.id
+          const isSelected = selectedPhraseId === caption.id || draggedCaptionId === caption.id || resizingCaptionId === caption.id
           const textBoxWidth = `${safePosition.maxWidth}%`
           
           return (
@@ -644,6 +874,10 @@ export default function InteractiveCaptionEditor() {
                 cursor: isDragging ? 'grabbing' : 'grab'
               }}
               onMouseDown={(e) => handleMouseDown(caption.id, e)}
+              onClick={(e) => {
+                e.stopPropagation()
+                setSelectedPhraseId(caption.id)
+              }}
             >
               {/* Canva-style Text Container with visible border & inline editing */}
               <div
@@ -665,39 +899,8 @@ export default function InteractiveCaptionEditor() {
               >
                 {/* Actual text content (inline editable) */}
                 <div
-                  contentEditable={isEditingId === caption.id}
+                  contentEditable={false}
                   suppressContentEditableWarning
-                  onInput={(e) => {
-                    const val = (e.currentTarget.textContent || '').trim()
-                    setEditingText(val)
-                    // Commit live edits to store immediately so export can't be stale
-                    updatePhraseText(caption.id, val)
-                  }}
-                  onBlur={() => {
-                    if (isEditingId === caption.id) {
-                      updatePhraseText(caption.id, editingText || caption.text)
-                      setIsEditingId(null)
-                    }
-                  }}
-                  onClick={(e) => {
-                    if (isEditingId !== caption.id) {
-                      e.stopPropagation()
-                      setIsEditingId(caption.id)
-                      setEditingText(caption.text)
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (isEditingId === caption.id) {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        updatePhraseText(caption.id, editingText || caption.text)
-                        setIsEditingId(null)
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault()
-                        setIsEditingId(null)
-                      }
-                    }
-                  }}
                   style={{
                     fontSize: `${safePosition.fontSize}px`,
                     fontFamily: style.fontFamily,
@@ -719,12 +922,8 @@ export default function InteractiveCaptionEditor() {
                     width: '100%'
                   }}
                 >
-                  {/* Wrapped text display (fallback to live value when editing) */}
-                  {isEditingId === caption.id
-                    ? (editingText || caption.text)
-                    : wrappedLines.map((line, i) => (
-                        <div key={i}>{line}</div>
-                      ))}
+                  {/* Wrapped text display with inline color support */}
+                  {renderRichTextWithColors(caption.text, style.color)}
                 </div>
                 
                 {/* Canva-style Width Resize Handles */}
@@ -813,24 +1012,7 @@ export default function InteractiveCaptionEditor() {
           )
         })}
 
-        {/* Instructions Overlay */}
-        {activeCaptions.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center text-white bg-black/50 p-4 rounded-lg">
-              <p className="text-sm mb-2">No captions active at {previewTime.toFixed(1)}s</p>
-              <p className="text-xs text-gray-300">
-                Adjust the preview time slider or select captions with timing that includes this moment
-              </p>
-            </div>
-          </div>
-        )}
-
-        {activeCaptions.length > 0 && !isDragging && (
-          <div className="absolute top-4 left-4 bg-black/70 text-white p-2 rounded text-xs space-y-1">
-            <p>💡 Drag captions to reposition • Click to resize</p>
-            <p className="text-green-300">🎯 WYSIWYG: Export matches preview exactly</p>
-          </div>
-        )}
+        {/* Removed instructional overlays for a cleaner canvas */}
 
         {/* Center Play/Pause Overlay */}
         <button
@@ -844,11 +1026,11 @@ export default function InteractiveCaptionEditor() {
         </button>
       </div>
 
-      {/* Caption Controls */}
-      {activeCaptions.length > 0 && (
+      {/* Caption Controls (always show controls for time-matching captions) */}
+      {timeCaptions.length > 0 && (
         <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
-            <h5 className="font-medium">Active Captions at {previewTime.toFixed(1)}s</h5>
+            <h5 className="font-medium">Captions at {previewTime.toFixed(1)}s</h5>
             <div className="flex items-center gap-2 text-xs">
               {syncFontSizes ? (
                 <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
@@ -865,7 +1047,7 @@ export default function InteractiveCaptionEditor() {
           </div>
           
           <div className="space-y-2">
-            {activeCaptions.map((caption) => {
+            {timeCaptions.map((caption) => {
               const position = captionPositions[caption.id] || { x: 50, y: 85, fontSize: 24, maxWidth: 80 }
               // Ensure all properties are defined
               const safePosition = {
@@ -878,10 +1060,63 @@ export default function InteractiveCaptionEditor() {
                   key={caption.id}
                   className="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded border"
                 >
-                  <span className="text-sm font-medium flex-1 mr-2">
-                    &quot;{caption.text.substring(0, 30)}{caption.text.length > 30 ? '...' : ''}&quot;
-                  </span>
+                  <textarea
+                    value={stripColorTags(caption.text)}
+                    onChange={(e) => updatePhraseText(caption.id, e.target.value)}
+                    className="flex-1 mr-2 px-2 py-1 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-y min-h-[36px]"
+                    placeholder="Edit caption text… (Enter for new line)"
+                    rows={2}
+                    ref={(el) => {
+                      if (!el) return
+                      textareaRefsRef.current[caption.id] = el
+                      const handler = () => {
+                        selectionRangesRef.current[caption.id] = {
+                          start: el.selectionStart || 0,
+                          end: el.selectionEnd || 0,
+                        }
+                      }
+                      el.addEventListener('select', handler)
+                      el.addEventListener('mouseup', handler)
+                      el.addEventListener('keyup', handler)
+                    }}
+                  />
                   <div className="flex items-center gap-3">
+                    {/* Show/Hide toggle */}
+                    <label className="inline-flex items-center gap-1 text-xs cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={caption.isSelected}
+                        onChange={() => togglePhraseSelection(caption.id)}
+                        className="accent-blue-600"
+                      />
+                      <span className="text-gray-700 dark:text-gray-200">Show</span>
+                    </label>
+                    {/* Color picker for selected range */}
+                    <input
+                      type="color"
+                      value={pickerColorById[caption.id] || '#ffffff'}
+                      onChange={(e) => {
+                        const color = e.target.value
+                        setPickerColorById(prev => ({ ...prev, [caption.id]: color }))
+                        // Apply color wrap only once per change (avoid partial hex while dragging)
+                        const hexOk = /^#[0-9a-fA-F]{6}$/.test(color)
+                        if (!hexOk) return
+                        // Always try to read the freshest selection from the textarea element
+                        const ta = textareaRefsRef.current[caption.id]
+                        let range = selectionRangesRef.current[caption.id]
+                        if (ta && typeof ta.selectionStart === 'number' && typeof ta.selectionEnd === 'number') {
+                          range = { start: ta.selectionStart, end: ta.selectionEnd }
+                          selectionRangesRef.current[caption.id] = range
+                        }
+                        if (!range || range.start === range.end) return
+                        // Wrap selected range on the rich string using mapped indices, preserving previous colors
+                        // Robust segment-based application to preserve and override colors precisely
+                        const updated = applyColorToPlainRange(caption.text, range.start, range.end, color)
+                        updatePhraseText(caption.id, updated)
+                      }}
+                      className="w-7 h-7 rounded overflow-hidden border border-gray-300 dark:border-gray-600"
+                      title="Apply color to selected text"
+                    />
                     {/* Font Size Controls */}
                     <div className="flex items-center gap-1">
                       <button
@@ -983,23 +1218,7 @@ export default function InteractiveCaptionEditor() {
         </div>
       )}
 
-      <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3">
-        <div className="flex items-start gap-2">
-          <div className="w-2 h-2 bg-blue-500 rounded-full mt-1 flex-shrink-0"></div>
-          <div className="text-sm text-blue-800 dark:text-blue-200">
-            <p className="font-medium mb-1">Interactive Controls:</p>
-            <ul className="text-xs space-y-1 text-blue-700 dark:text-blue-300">
-              <li>• <strong>Drag captions</strong> to reposition them anywhere on the video</li>
-              <li>• <strong>Click caption</strong> to show resize controls</li>
-              <li>• <strong>Toggle sync mode</strong> to change all captions at once or individually</li>
-              <li>• <strong>Auto text wrapping</strong> prevents overflow and breaks long text into lines</li>
-              <li>• <strong>Smart font sizing</strong> automatically reduces size if text doesn&apos;t fit</li>
-              <li>• <strong>Safe area margins</strong> keep text within video boundaries</li>
-              <li>• <strong>Reset button</strong> restores default position and size</li>
-            </ul>
-          </div>
-        </div>
-      </div>
+      
     </div>
   )
 }

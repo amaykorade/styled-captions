@@ -85,36 +85,7 @@ export default function CaptionModeSelector() {
         </button>
       </div>
 
-      <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
-        <div className="flex items-start gap-2">
-          <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-          <div className="text-sm">
-            <p className="text-blue-800 dark:text-blue-200 font-medium mb-1">
-              {captionMode === 'key-phrases' ? '✨ Key Phrases Mode Active' : '📝 Full Transcript Mode Active'}
-            </p>
-            <p className="text-blue-700 dark:text-blue-300">
-              {captionMode === 'key-phrases' 
-                ? 'Perfect for social media - shows only the most engaging parts of your video to grab attention and boost engagement'
-                : 'Great for accessibility and education - shows every word spoken in the video for complete understanding'
-              }
-            </p>
-            <div className="mt-2 flex items-center gap-4 text-xs text-blue-600 dark:text-blue-400">
-              <span>
-                📊 Coverage: {captionMode === 'key-phrases' 
-                  ? `${Math.round((keyPhrasesCount / (keyPhrasesCount + fullTranscriptCount)) * 100)}% of transcript`
-                  : '100% of transcript'
-                }
-              </span>
-              <span>
-                🎯 Best for: {captionMode === 'key-phrases' 
-                  ? 'TikTok, Instagram Reels, YouTube Shorts'
-                  : 'Educational content, Accessibility, Full understanding'
-                }
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Removed verbose mode info to keep UI clean */}
     </div>
   )
 }

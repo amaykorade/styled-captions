@@ -60,13 +60,13 @@ export default function VideoPreview({ file, className = '' }: VideoPreviewProps
   }
 
   return (
-    <div className={`bg-black rounded-lg overflow-hidden ${className}`}>
+    <div className={`bg-black rounded-xl overflow-hidden shadow-2xl ${className}`}>
       <div className="relative">
         {videoUrl && (
           <video
             ref={videoRef}
             src={videoUrl}
-            className="w-full h-auto max-w-md mx-auto max-h-80 object-contain"
+            className="w-full h-auto max-h-[70vh] object-contain"
             onLoadedMetadata={handleLoadedMetadata}
             onTimeUpdate={handleTimeUpdate}
             onPlay={() => setIsPlaying(true)}
@@ -79,28 +79,21 @@ export default function VideoPreview({ file, className = '' }: VideoPreviewProps
         <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
           <button
             onClick={togglePlay}
-            className="bg-white/20 hover:bg-white/30 rounded-full p-3 transition-colors"
+            className="bg-white/20 hover:bg-white/30 rounded-full p-4 transition-colors"
           >
             {isPlaying ? (
-              <Pause className="w-6 h-6 text-white" />
+              <Pause className="w-8 h-8 text-white" />
             ) : (
-              <Play className="w-6 h-6 text-white ml-1" />
+              <Play className="w-8 h-8 text-white ml-1" />
             )}
           </button>
         </div>
       </div>
 
-      {/* Video Info */}
-      <div className="p-4 bg-gray-900 text-white">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">{file.name}</span>
-          <span className="text-sm text-gray-400">
-            {(file.size / (1024 * 1024)).toFixed(1)}MB
-          </span>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+      {/* Video Info - Compact for canvas */}
+      <div className="p-3 bg-gray-900 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <button
               onClick={togglePlay}
               className="flex items-center gap-1 text-sm hover:text-blue-400 transition-colors"

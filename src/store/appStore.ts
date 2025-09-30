@@ -78,6 +78,7 @@ interface AppState {
   // UI state
   currentStep: 'upload' | 'transcribe' | 'edit' | 'export'
   currentTime: number
+  selectedPhraseId: string | null
   previewCanvasWidth?: number
   previewCanvasHeight?: number
   previewRenderedVideoWidth?: number
@@ -123,6 +124,7 @@ interface AppActions {
   // UI actions
   setCurrentStep: (step: AppState['currentStep']) => void
   setCurrentTime: (time: number) => void
+  setSelectedPhraseId: (phraseId: string | null) => void
   setPreviewCanvasDimensions: (width: number, height: number) => void
   setPreviewRenderedVideoDimensions: (width: number, height: number) => void
   setPreviewVideoOffsets: (offsetX: number, offsetY: number) => void
@@ -148,6 +150,7 @@ const initialState: AppState = {
   exportedVideoUrl: null,
   currentStep: 'upload',
   currentTime: 0,
+  selectedPhraseId: null,
   previewCanvasWidth: undefined,
   previewCanvasHeight: undefined,
   previewRenderedVideoWidth: undefined,
@@ -248,6 +251,7 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   
   setCurrentStep: (step) => set({ currentStep: step }),
   setCurrentTime: (time) => set({ currentTime: time }),
+  setSelectedPhraseId: (phraseId) => set({ selectedPhraseId: phraseId }),
   setPreviewCanvasDimensions: (width, height) => set({ previewCanvasWidth: width, previewCanvasHeight: height }),
   setPreviewRenderedVideoDimensions: (width, height) => set({ previewRenderedVideoWidth: width, previewRenderedVideoHeight: height }),
   setPreviewVideoOffsets: (offsetX, offsetY) => set({ previewVideoOffsetX: offsetX, previewVideoOffsetY: offsetY }),

@@ -10,6 +10,7 @@ import { runFullDiagnostic } from '@/services/diagnosticExportService'
 import { exportVideoCanvasOnly } from '@/services/workingExportService'
 import { exportVideoFast } from '@/services/fastExportService'
 import { exportVideoWYSIWYG, getPreviewCanvasDimensions } from '@/services/wysiwygExportService'
+import { transcodeBlobToFormat } from '@/services/fileConversionService'
 import { Download, Loader2, CheckCircle, AlertCircle, Share2, TestTube } from 'lucide-react'
 
 export default function ExportPanel() {
@@ -34,6 +35,7 @@ export default function ExportPanel() {
 
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMethod, setExportMethod] = useState<'ffmpeg' | 'canvas'>('ffmpeg')
+  const [format, setFormat] = useState<'webm' | 'mp4' | 'mov'>('webm')
   const [previewCanvasRef, setPreviewCanvasRef] = useState<HTMLCanvasElement | null>(null)
 
   const currentCaptions = getCurrentCaptions()
@@ -95,7 +97,16 @@ export default function ExportPanel() {
         }
       )
       
-      setExportedVideoUrl(outputUrl)
+      if (format === 'webm') {
+        setExportedVideoUrl(outputUrl)
+      } else {
+        // Fetch webm and transcode to target format
+        const res = await fetch(outputUrl)
+        const webmBlob = await res.blob()
+        const { blob, mime } = await transcodeBlobToFormat(webmBlob, format, (p) => setExportProgress(p))
+        const finalUrl = URL.createObjectURL(blob)
+        setExportedVideoUrl(finalUrl)
+      }
       console.log('✅ WYSIWYG export completed - should match preview exactly!')
       
     } catch (error) {
@@ -241,8 +252,8 @@ export default function ExportPanel() {
       try {
         const response = await fetch(exportedVideoUrl)
         const blob = await response.blob()
-        const mime = blob.type || 'video/webm'
-        const ext = mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : 'webm'
+        const mime = blob.type || (format === 'mp4' ? 'video/mp4' : format === 'mov' ? 'video/quicktime' : 'video/webm')
+        const ext = mime.includes('mp4') ? 'mp4' : mime.includes('quicktime') ? 'mov' : mime.includes('webm') ? 'webm' : format
         const tmpUrl = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = tmpUrl
@@ -264,8 +275,8 @@ export default function ExportPanel() {
     try {
       const response = await fetch(exportedVideoUrl)
       const blob = await response.blob()
-      const mime = blob.type || 'video/webm'
-      const ext = mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : 'webm'
+      const mime = blob.type || (format === 'mp4' ? 'video/mp4' : format === 'mov' ? 'video/quicktime' : 'video/webm')
+      const ext = mime.includes('mp4') ? 'mp4' : mime.includes('quicktime') ? 'mov' : mime.includes('webm') ? 'webm' : format
       const file = new File([blob], `video-with-captions.${ext}`, { type: mime })
 
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -443,9 +454,15 @@ export default function ExportPanel() {
             <span className="text-gray-600 dark:text-gray-400">Selected Captions:</span>
             <span>{selectedPhrases.length}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <span className="text-gray-600 dark:text-gray-400">Output Format:</span>
-            <span>WebM/MP4</span>
+            <div className="flex items-center gap-2">
+              <select value={format} onChange={(e) => setFormat(e.target.value as any)} className="text-sm border rounded px-2 py-1 bg-white dark:bg-gray-900">
+                <option value="webm">WebM (fast)</option>
+                <option value="mp4">MP4 H.264 (compatible)</option>
+                <option value="mov">MOV (QuickTime)</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
